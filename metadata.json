@@ -1,0 +1,6 @@
+{
+  "name": "Lumina",
+  "description": "Premium AI Family Photo Manager with face recognition, smart searches, and secure memories.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
