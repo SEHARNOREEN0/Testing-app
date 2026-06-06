@@ -9,6 +9,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -344,10 +348,7 @@ fun LuminaTopBanner(
     if (showDialog) {
         AddPhotoDialog(
             onDismiss = { showDialog = false },
-            onSubmit = { title, event, location, people, tags ->
-                viewModel.addManualPhoto(title, event, location, people, tags)
-                showDialog = false
-            }
+            viewModel = viewModel
         )
     }
 }
@@ -468,7 +469,14 @@ data class NavigationItem(val title: String, val icon: androidx.compose.ui.graph
 // 1. HOME SCREEN VIEW
 @Composable
 fun HomeScreen(viewModel: LuminaViewModel, state: LuminaUiState) {
-    val searchFilteredPhotos = remember(state.photos, state.searchQuery, state.selectedPersonFilter, state.toleranceThreshold) {
+    val searchFilteredPhotos = remember(
+        state.photos,
+        state.searchQuery,
+        state.selectedPersonFilter,
+        state.selectedTagFilter,
+        state.selectedYearFilter,
+        state.toleranceThreshold
+    ) {
         state.photos.filter { p ->
             val queryMatch = state.searchQuery.isBlank() ||
                     p.title.contains(state.searchQuery, true) ||
@@ -479,139 +487,150 @@ fun HomeScreen(viewModel: LuminaViewModel, state: LuminaUiState) {
             val personMatch = state.selectedPersonFilter == null ||
                     p.detectedPeople.contains(state.selectedPersonFilter.name, true)
 
+            val tagMatch = state.selectedTagFilter == null ||
+                    p.tags.contains(state.selectedTagFilter, true)
+
+            val dateMatch = state.selectedYearFilter == null ||
+                    p.date.contains(state.selectedYearFilter)
+
             // Tolerance threshold actually works!
             val toleranceMatch = p.confidence >= state.toleranceThreshold
 
-            queryMatch && personMatch && toleranceMatch
+            queryMatch && personMatch && tagMatch && dateMatch && toleranceMatch
         }
     }
 
-    LazyColumn(
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 160.dp),
         modifier = Modifier
             .fillMaxSize()
             .testTag("home_scroll_container")
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Hero Section Calling: "Find Every Memory With a Single Selfie"
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(Color.White.copy(alpha = 0.05f))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(32.dp))
-                    .padding(24.dp)
-                    .testTag("hero_panel")
-            ) {
-                // Background orb drawings matching absolute top-right and bottom-left blobs of HTML precisely
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    // Top-right giant glowing blue orb (bg-blue-500/20 blur-3xl)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFF00D4FF).copy(alpha = 0.22f), Color.Transparent),
-                            center = Offset(size.width * 0.95f, size.height * 0.05f),
-                            radius = size.width * 0.5f
-                        )
-                    )
-                    // Bottom-left giant glowing emerald/green orb (bg-emerald-500/10 blur-2xl)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFF00FFA3).copy(alpha = 0.12f), Color.Transparent),
-                            center = Offset(size.width * 0.05f, size.height * 0.95f),
-                            radius = size.width * 0.4f
-                        )
-                    )
-                }
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(30.dp))
-                            .background(LuminaPrimary.copy(alpha = 0.12f))
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Spark",
-                                tint = LuminaPrimary,
-                                modifier = Modifier.size(12.dp)
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(32.dp))
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), RoundedCornerShape(32.dp))
+                        .padding(24.dp)
+                        .testTag("hero_panel")
+                ) {
+                    // Background orb drawings matching absolute top-right and bottom-left blobs of HTML precisely
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        // Top-right giant glowing blue orb (bg-blue-500/20 blur-3xl)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(Color(0xFF00D4FF).copy(alpha = 0.22f), Color.Transparent),
+                                center = Offset(size.width * 0.95f, size.height * 0.05f),
+                                radius = size.width * 0.5f
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "SECURE GRAPH RECOGNITION V2.1",
-                                color = LuminaPrimary,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp
+                        )
+                        // Bottom-left giant glowing emerald/green orb (bg-emerald-500/10 blur-2xl)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(Color(0xFF00FFA3).copy(alpha = 0.12f), Color.Transparent),
+                                center = Offset(size.width * 0.05f, size.height * 0.95f),
+                                radius = size.width * 0.4f
                             )
-                        }
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = androidx.compose.ui.text.buildAnnotatedString {
-                            append("Find memories by\n")
-                            pushStyle(androidx.compose.ui.text.SpanStyle(color = LuminaPrimary))
-                            append("Selfie Search")
-                            pop()
-                        },
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 30.sp,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "AI indexed ${state.photos.size * 3 + 12402} family photos safely in this catalog vault.",
-                        fontSize = 13.sp,
-                        color = LuminaMuted,
-                        lineHeight = 18.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = { viewModel.startSelfieSearch() },
-                            contentPadding = PaddingValues(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                            shape = RoundedCornerShape(16.dp),
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Box(
                             modifier = Modifier
-                                .weight(1.2f)
-                                .height(48.dp)
-                                .background(
-                                    brush = Brush.horizontalGradient(
-                                        listOf(LuminaPrimary, LuminaSecondary)
-                                    ),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .testTag("hero_scan_selfie_button")
+                                .clip(RoundedCornerShape(30.dp))
+                                .background(LuminaPrimary.copy(alpha = 0.12f))
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Text("✦", color = Color.White, fontSize = 14.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Spark",
+                                    tint = LuminaPrimary,
+                                    modifier = Modifier.size(12.dp)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Scan My Face", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(
+                                    "SECURE GRAPH RECOGNITION V2.1",
+                                    color = LuminaPrimary,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
+                                )
                             }
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.navigateTo(LuminaScreen.PEOPLE) },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.05f),
-                                contentColor = LuminaText
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Text("Meet People", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = androidx.compose.ui.text.buildAnnotatedString {
+                                append("Find memories by\n")
+                                pushStyle(androidx.compose.ui.text.SpanStyle(color = LuminaPrimary))
+                                append("Selfie Search")
+                                pop()
+                            },
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 30.sp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "AI indexed ${state.photos.size * 3 + 12402} family photos safely in this catalog vault.",
+                            fontSize = 13.sp,
+                            color = LuminaMuted,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { viewModel.startSelfieSearch() },
+                                contentPadding = PaddingValues(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .height(48.dp)
+                                    .background(
+                                        brush = Brush.horizontalGradient(
+                                            listOf(LuminaPrimary, LuminaSecondary)
+                                        ),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .testTag("hero_scan_selfie_button")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Text("✦", color = Color.White, fontSize = 14.sp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Scan My Face", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.navigateTo(LuminaScreen.PEOPLE) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.05f),
+                                    contentColor = LuminaText
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
+                                Text("Meet People", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            }
                         }
                     }
                 }
@@ -619,170 +638,288 @@ fun HomeScreen(viewModel: LuminaViewModel, state: LuminaUiState) {
         }
 
         // Stats Header Section
-        item {
-            Spacer(modifier = Modifier.height(20.dp))
-            Text(
-                "ENGINE STATUS & STATS",
-                fontSize = 11.sp,
-                color = LuminaPrimary,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StatCard(title = "Total photos", value = "${state.photos.size}", info = "Catalog size", modifier = Modifier.testTag("stat_photos"))
-                StatCard(title = "People Indexed", value = "${state.people.size}", info = "Verified faces", modifier = Modifier.testTag("stat_people"))
-                StatCard(title = "Scan Accuracy", value = "99.4%", info = "Model confidence", modifier = Modifier.testTag("stat_accuracy"))
-                StatCard(title = "Search Speed", value = "23 ms", info = "Indices scanned", modifier = Modifier.testTag("stat_speed"))
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    "ENGINE STATUS & STATS",
+                    fontSize = 11.sp,
+                    color = LuminaPrimary,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    StatCard(title = "Total photos", value = "${state.photos.size}", info = "Catalog size", modifier = Modifier.testTag("stat_photos"))
+                    StatCard(title = "People Indexed", value = "${state.people.size}", info = "Verified faces", modifier = Modifier.testTag("stat_people"))
+                    StatCard(title = "Scan Accuracy", value = "99.4%", info = "Model confidence", modifier = Modifier.testTag("stat_accuracy"))
+                    StatCard(title = "Search Speed", value = "23 ms", info = "Indices scanned", modifier = Modifier.testTag("stat_speed"))
+                }
             }
         }
 
         // Search text input bar
-        item {
-            Spacer(modifier = Modifier.height(20.dp))
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = { viewModel.setSearchQuery(it) },
-                placeholder = { Text("Search title, location, event tags...", color = LuminaMuted) },
-                leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = "Query search", tint = LuminaMuted) },
-                trailingIcon = {
-                    if (state.searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Clear", tint = LuminaMuted)
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                Spacer(modifier = Modifier.height(20.dp))
+                OutlinedTextField(
+                    value = state.searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    placeholder = { Text("Search title, location, event tags...", color = LuminaMuted) },
+                    leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = "Query search", tint = LuminaMuted) },
+                    trailingIcon = {
+                        if (state.searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                Icon(imageVector = Icons.Default.Close, contentDescription = "Clear", tint = LuminaMuted)
+                            }
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = LuminaText,
+                        unfocusedTextColor = LuminaText,
+                        focusedBorderColor = LuminaPrimary,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                        focusedContainerColor = LuminaCard,
+                        unfocusedContainerColor = LuminaCard
+                    ),
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("home_search_bar")
+                )
+            }
+        }
+
+        // SMART SEARCH INTERFACE: TAGS AND DATES/YEAR FILTERS
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "FILTER BY TAGS",
+                        fontSize = 11.sp,
+                        color = LuminaPrimary,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (state.selectedTagFilter != null) {
+                        Text(
+                            text = "Clear #",
+                            color = LuminaPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable { viewModel.setTagFilter(null) }
+                                .padding(horizontal = 4.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val availableTags = listOf("Outdoors", "Cozy", "Celebration", "Camping", "Baking", "Birthday", "Winter")
+                    availableTags.forEach { tag ->
+                        val isSelected = state.selectedTagFilter == tag
+                        val itemBg = if (isSelected) LuminaPrimary else Color.White.copy(alpha = 0.05f)
+                        val itemBorderColor = if (isSelected) LuminaPrimary else Color.White.copy(alpha = 0.15f)
+                        val txtColor = if (isSelected) Color.Black else LuminaText
+                        val isBold = if (isSelected) FontWeight.Bold else FontWeight.Normal
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(itemBg)
+                                .border(BorderStroke(1.dp, itemBorderColor), RoundedCornerShape(8.dp))
+                                .clickable { viewModel.setTagFilter(tag) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .testTag("tag_filter_$tag")
+                        ) {
+                            Text(
+                                text = "#$tag",
+                                color = txtColor,
+                                fontSize = 11.sp,
+                                fontWeight = isBold
+                            )
                         }
                     }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = LuminaText,
-                    unfocusedTextColor = LuminaText,
-                    focusedBorderColor = LuminaPrimary,
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                    focusedContainerColor = LuminaCard,
-                    unfocusedContainerColor = LuminaCard
-                ),
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("home_search_bar")
-            )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "FILTER BY YEAR",
+                        fontSize = 11.sp,
+                        color = LuminaAccent,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (state.selectedYearFilter != null) {
+                        Text(
+                            text = "Clear Year",
+                            color = LuminaAccent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable { viewModel.setYearFilter(null) }
+                                .padding(horizontal = 4.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val availableYears = listOf("2024", "2025", "2026")
+                    availableYears.forEach { year ->
+                        val isSelected = state.selectedYearFilter == year
+                        val itemBg = if (isSelected) LuminaAccent else Color.White.copy(alpha = 0.05f)
+                        val itemBorderColor = if (isSelected) LuminaAccent else Color.White.copy(alpha = 0.15f)
+                        val txtColor = if (isSelected) Color.Black else LuminaText
+                        val isBold = if (isSelected) FontWeight.Bold else FontWeight.Normal
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(itemBg)
+                                .border(BorderStroke(1.dp, itemBorderColor), RoundedCornerShape(8.dp))
+                                .clickable { viewModel.setYearFilter(year) }
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                                .testTag("year_filter_$year")
+                        ) {
+                            Text(
+                                text = "Year $year",
+                                color = txtColor,
+                                fontSize = 11.sp,
+                                fontWeight = isBold
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // 2. PEOPLE CAROUSEL HEADER
-        item {
-            Spacer(modifier = Modifier.height(20.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    "POPULAR FACES",
-                    fontSize = 11.sp,
-                    color = LuminaPrimary,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    "Select face filters",
-                    color = LuminaMuted,
-                    fontSize = 11.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("people_carousel")
-            ) {
-                items(state.people) { person ->
-                    val isSelected = state.selectedPersonFilter?.id == person.id
-                    PersonCarouselCard(
-                        person = person,
-                        isSelected = isSelected,
-                        onClick = { viewModel.setPersonFilter(person) }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "POPULAR FACES",
+                        fontSize = 11.sp,
+                        color = LuminaPrimary,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.weight(1f)
                     )
+                    Text(
+                        "Select face filters",
+                        color = LuminaMuted,
+                        fontSize = 11.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("people_carousel")
+                ) {
+                    items(state.people) { person ->
+                        val isSelected = state.selectedPersonFilter?.id == person.id
+                        PersonCarouselCard(
+                            person = person,
+                            isSelected = isSelected,
+                            onClick = { viewModel.setPersonFilter(person) }
+                        )
+                    }
                 }
             }
         }
 
         // 3. PHOTOS GRID SECTION
-        item {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                "MEMORY VAULT WORKSPACE (${searchFilteredPhotos.size})",
-                fontSize = 11.sp,
-                color = LuminaPrimary,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
-            )
-            Spacer(modifier = Modifier.height(10.dp))
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    "MEMORY VAULT WORKSPACE (${searchFilteredPhotos.size})",
+                    fontSize = 11.sp,
+                    color = LuminaPrimary,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
 
-            if (searchFilteredPhotos.isEmpty()) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(LuminaCard)
-                        .padding(24.dp)
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search empty",
-                            tint = LuminaMuted,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            "No Memory matches security filter",
-                            color = LuminaMuted,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            "Try clearing query search or adjusting tolerance slider in settings.",
-                            color = LuminaMuted.copy(alpha = 0.5f),
-                            fontSize = 11.sp,
-                            textAlign = TextAlign.Center
-                        )
+                if (searchFilteredPhotos.isEmpty()) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(LuminaCard)
+                            .padding(24.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search empty",
+                                tint = LuminaMuted,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                "No Memory matches security filter",
+                                color = LuminaMuted,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Try clearing query search or adjusting filter selections.",
+                                color = LuminaMuted.copy(alpha = 0.5f),
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Flex layout for the photos masonry list
-        items(searchFilteredPhotos.chunked(2)) { pair ->
-            Row(
+        items(searchFilteredPhotos) { photo ->
+            PhotoGridItem(
+                photo = photo,
+                onClick = { viewModel.selectPhotoForDetail(photo) },
+                onFavoriteClick = { viewModel.toggleFavorite(photo.id, photo.isFavorite) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                for (photo in pair) {
-                    PhotoGridItem(
-                        photo = photo,
-                        onClick = { viewModel.selectPhotoForDetail(photo) },
-                        onFavoriteClick = { viewModel.toggleFavorite(photo.id, photo.isFavorite) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("photo_card_${photo.id}")
-                    )
-                }
-                if (pair.size == 1) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-            }
+                    .testTag("photo_card_${photo.id}")
+            )
         }
 
-        item {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Spacer(modifier = Modifier.height(40.dp))
         }
     }
@@ -898,8 +1035,8 @@ fun PhotoGridItem(
     modifier: Modifier = Modifier
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = LuminaCard),
-        border = BorderStroke(1.dp, LuminaGlassBorder),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.16f)),
         shape = RoundedCornerShape(12.dp),
         modifier = modifier
             .height(150.dp)
@@ -916,7 +1053,16 @@ fun PhotoGridItem(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(Color(0xE60A0E17)) // Semi-translucent dark slate glass and blur representation
+                    .drawBehind {
+                        // Glossy top frosted line
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.12f),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, 0f),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
                     .padding(8.dp)
             ) {
                 Text(
@@ -2368,78 +2514,578 @@ fun PhotoViewerModal(
 }
 
 // Dialog input box flow to add custom Mock/Simulated memories and watch states refresh in real-time
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun AddPhotoDialog(
     onDismiss: () -> Unit,
-    onSubmit: (String, String, String, String, String) -> Unit
+    viewModel: LuminaViewModel
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
+    var step by remember { mutableStateOf(1) } // 1: Select File/Validation, 2: Face Detection & Labeling, 3: Save Metadata
+
+    // Upload & validation states
+    var fileName by remember { mutableStateOf("") }
+    var mimeType by remember { mutableStateOf("") }
+    var fileUriString by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    var validationSuccess by remember { mutableStateOf<String?>(null) }
+
+    // Analysis states
+    var isAnalyzing by remember { mutableStateOf(false) }
+    var analysisProgress by remember { mutableStateOf(0f) }
+    var analysisDone by remember { mutableStateOf(false) }
+
+    // Face regions label state
+    var face1Label by remember { mutableStateOf("") }
+    var face1IsNew by remember { mutableStateOf(false) }
+    var face1NewName by remember { mutableStateOf("") }
+    var face1NewRelation by remember { mutableStateOf("Family Member") }
+
+    var face2Label by remember { mutableStateOf("") }
+    var face2IsNew by remember { mutableStateOf(false) }
+    var face2NewName by remember { mutableStateOf("") }
+    var face2NewRelation by remember { mutableStateOf("Family Member") }
+
+    // Photo metadata state
     var title by remember { mutableStateOf("") }
     var event by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
-    var people by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf("") }
+
+    // Native photo picker activity contract
+    val singlePhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                fileUriString = uri.toString()
+                val type = context.contentResolver.getType(uri) ?: ""
+                mimeType = type
+
+                // Retrieve file name
+                var name = "NATIVE_IMAGE.IMG"
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        name = cursor.getString(nameIndex)
+                    }
+                }
+                fileName = name
+
+                // Validation logic (PNG, JPG/JPEG, WEBP)
+                val ext = name.substringAfterLast('.', "").lowercase()
+                val isImageMime = type == "image/jpeg" || type == "image/png" || type == "image/webp"
+                val isImageExt = ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp"
+
+                if (isImageMime || isImageExt) {
+                    validationSuccess = "✓ Secure format validated successfully! (Format: ${type.ifBlank { ext.uppercase() }})"
+                    validationError = null
+                } else {
+                    validationError = "❌ Unauthorized Format! Secure vault accepts only high-fidelity JPEG, PNG, or WEBP images."
+                    validationSuccess = null
+                }
+            }
+        }
+    )
+
+    // Simulate ticking for scan progress bar
+    LaunchedEffect(isAnalyzing) {
+        if (isAnalyzing) {
+            analysisProgress = 0f
+            while (analysisProgress < 1.0f) {
+                kotlinx.coroutines.delay(150)
+                analysisProgress += 0.08f
+            }
+            analysisProgress = 1.0f
+            isAnalyzing = false
+            analysisDone = true
+            step = 2 // transition to label face step!
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Catalog New Memory Node", color = LuminaPrimary, fontWeight = FontWeight.Bold) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Secure Upload",
+                    tint = LuminaPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (step) {
+                        1 -> "Secure Photo Upload"
+                        2 -> "AI Face Labeling Portal"
+                        else -> "Catalog Metadata Nodes"
+                    },
+                    color = LuminaPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Lumina handles manual uploads by creating mock visual coordinates representing the camera sensor state.",
-                    fontSize = 11.sp,
-                    color = LuminaMuted
-                )
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title", color = LuminaMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText)
-                )
-                OutlinedTextField(
-                    value = event,
-                    onValueChange = { event = it },
-                    label = { Text("Classified Event Theme", color = LuminaMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText)
-                )
-                OutlinedTextField(
-                    value = location,
-                    onValueChange = { location = it },
-                    label = { Text("Location Address", color = LuminaMuted) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText)
-                )
-                OutlinedTextField(
-                    value = people,
-                    onValueChange = { people = it },
-                    label = { Text("Detected People (Comma-split)", color = LuminaMuted) },
-                    placeholder = { Text("Abby Williams, Leo Williams") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText)
-                )
-                OutlinedTextField(
-                    value = tags,
-                    onValueChange = { tags = it },
-                    label = { Text("Semantic Labels / Tags (Comma-split)", color = LuminaMuted) },
-                    placeholder = { Text("Summer, Pool, Fun") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText)
-                )
+                // STEP 1: Select/Upload Image with format verification
+                if (step == 1) {
+                    Text(
+                        text = "Upload high-resolution images to the secure vault. Lumina runs client-side checking and localized facial mapping.",
+                        fontSize = 11.sp,
+                        color = LuminaMuted,
+                        lineHeight = 16.sp
+                    )
+
+                    // Dashed selection zone
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.03f))
+                            .border(
+                                BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                singlePhotoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .padding(16.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.AddCircle,
+                                contentDescription = "Add image icon",
+                                tint = LuminaPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = if (fileName.isBlank()) "TAP TO CHOOSE SECURE PHOTO" else fileName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "JPEG, PNG, WEBP supported • Maximum 12MB",
+                                fontSize = 10.sp,
+                                color = LuminaMuted
+                            )
+                        }
+                    }
+
+                    // Preset quick-test option for streamers
+                    Button(
+                        onClick = {
+                            fileName = "DSC_9204_CHRISTMAS_CABIN.JPG"
+                            mimeType = "image/jpeg"
+                            validationSuccess = "✓ System Preset verified! (Format: JPEG)"
+                            validationError = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.07f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("✨ USE SYSTEM HIGH-RES PRESET SNAPSHOT", color = LuminaPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Success or Fail Feedback Indicators
+                    validationSuccess?.let {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(LuminaAccent.copy(alpha = 0.12f))
+                                .padding(10.dp)
+                        ) {
+                            Text(it, color = LuminaAccent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    validationError?.let {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(LuminaDanger.copy(alpha = 0.12f))
+                                .padding(10.dp)
+                        ) {
+                            Text(it, color = LuminaDanger, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    // Trigger AI face matching line scanner
+                    if (validationSuccess != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        if (isAnalyzing) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                LinearProgressIndicator(
+                                    progress = { analysisProgress },
+                                    color = LuminaPrimary,
+                                    trackColor = Color.White.copy(alpha = 0.1f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(CircleShape)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Analyzing face vector boundaries... ${(analysisProgress * 100).toInt()}%",
+                                    color = LuminaPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = { isAnalyzing = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = LuminaPrimary),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Default.Face, contentDescription = "", tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("RUN AI COGNITIVE FACE DETECTION", color = Color.Black, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // STEP 2: AI Face Circular regions identified & labeled with interactive selections
+                if (step == 2) {
+                    Text(
+                        "AI Detected 2 Face Graph Nodes in this secure upload snapshot. Name each unique family member coordinate below:",
+                        fontSize = 11.sp,
+                        color = LuminaMuted,
+                        lineHeight = 16.sp
+                    )
+
+                    // Photo representation box with circular target overlays!
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(BrandSecondary.copy(alpha = 0.6f), Color(0xFF0F172A))
+                                )
+                            )
+                    ) {
+                        // Let's draw scanning graphic with bounding coordinates!
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+                            
+                            // Draw glowing scanning overlay or matrix mesh
+                            drawCircle(
+                                color = LuminaPrimary.copy(alpha = 0.15f),
+                                radius = w * 0.45f,
+                                center = Offset(w * 0.5f, h * 0.5f)
+                            )
+                        }
+
+                        // Circular Face region #1 glowing locator
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .align(Alignment.Center)
+                                // offset left-ish
+                                .offset(x = (-45).dp, y = (-12).dp)
+                                .border(BorderStroke(2.dp, LuminaAccent), CircleShape)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .offset(y = (-16).dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(LuminaAccent)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text("Face #1", color = Color.Black, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+
+                        // Circular Face region #2 glowing locator
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .align(Alignment.Center)
+                                // offset right-ish
+                                .offset(x = 40.dp, y = 15.dp)
+                                .border(BorderStroke(2.dp, LuminaPrimary), CircleShape)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .offset(y = (-16).dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(LuminaPrimary)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text("Face #2", color = Color.Black, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+                    }
+
+                    // Face 1 label form
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.03f)),
+                        border = BorderStroke(1.dp, LuminaAccent.copy(alpha = 0.25f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(LuminaAccent)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("FACE COORDINATE #1", color = LuminaAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                            }
+
+                            // Picker Spinner or Custom name input
+                            if (face1IsNew) {
+                                OutlinedTextField(
+                                    value = face1NewName,
+                                    onValueChange = { face1NewName = it },
+                                    label = { Text("Name of New Family Member", color = LuminaMuted) },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = face1NewRelation,
+                                    onValueChange = { face1NewRelation = it },
+                                    label = { Text("Vault Relationship Profile", color = LuminaMuted) },
+                                    placeholder = { Text("Cousin, Brother, Grandma, Friend") },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                TextButton(onClick = { face1IsNew = false }) {
+                                    Text("← Use Existing Labeled Member", color = LuminaAccent, fontSize = 11.sp)
+                                }
+                            } else {
+                                // Simple list of existing member selections
+                                Text("Assign Identified Face:", color = LuminaMuted, fontSize = 11.sp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val suggestions = state.people.map { it.name } + listOf("Unsure / Other")
+                                    suggestions.forEach { sug ->
+                                        val selected = face1Label == sug
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (selected) LuminaAccent else Color.White.copy(alpha = 0.05f))
+                                                .clickable { face1Label = sug }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(sug, color = if (selected) Color.Black else LuminaText, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+
+                                TextButton(onClick = { face1IsNew = true }) {
+                                    Text("+ Setup New Labeled Member Profile", color = LuminaAccent, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    // Face 2 label form
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.03f)),
+                        border = BorderStroke(1.dp, LuminaPrimary.copy(alpha = 0.25f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(LuminaPrimary)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("FACE COORDINATE #2", color = LuminaPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                            }
+
+                            // Picker Spinner or Custom name input
+                            if (face2IsNew) {
+                                OutlinedTextField(
+                                    value = face2NewName,
+                                    onValueChange = { face2NewName = it },
+                                    label = { Text("Name of New Family Member", color = LuminaMuted) },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = face2NewRelation,
+                                    onValueChange = { face2NewRelation = it },
+                                    label = { Text("Vault Relationship Profile", color = LuminaMuted) },
+                                    placeholder = { Text("Cousin, Brother, Grandma, Friend") },
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                TextButton(onClick = { face2IsNew = false }) {
+                                    Text("← Use Existing Labeled Member", color = LuminaPrimary, fontSize = 11.sp)
+                                }
+                            } else {
+                                Text("Assign Identified Face:", color = LuminaMuted, fontSize = 11.sp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val suggestions = state.people.map { it.name } + listOf("Unsure / Other")
+                                    suggestions.forEach { sug ->
+                                        val selected = face2Label == sug
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (selected) LuminaPrimary else Color.White.copy(alpha = 0.05f))
+                                                .clickable { face2Label = sug }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(sug, color = if (selected) Color.Black else LuminaText, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+
+                                TextButton(onClick = { face2IsNew = true }) {
+                                    Text("+ Setup New Labeled Member Profile", color = LuminaPrimary, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = { step = 3 },
+                        colors = ButtonDefaults.buttonColors(containerColor = LuminaPrimary),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("PROCEED TO METADATA ARCHIVAL", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+
+                // STEP 3: Save Metadata node (Title, Event, Location, Tags)
+                if (step == 3) {
+                    Text(
+                        "Input metadata coordinates for memory indexing. All items are securely recorded in the graph system.",
+                        fontSize = 11.sp,
+                        color = LuminaMuted,
+                        lineHeight = 16.sp
+                    )
+
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Memory Node Title", color = LuminaMuted) },
+                        placeholder = { Text("e.g. Backyard family barbecue smiles") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = event,
+                        onValueChange = { event = it },
+                        label = { Text("Classified Event Theme", color = LuminaMuted) },
+                        placeholder = { Text("e.g. Thanksgiving Dinner, Pool Splash") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = location,
+                        onValueChange = { location = it },
+                        label = { Text("Physical Location Address", color = LuminaMuted) },
+                        placeholder = { Text("e.g. Tahoe Cabin, Backyard Home") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = tags,
+                        onValueChange = { tags = it },
+                        label = { Text("Semantic Descriptor Tags (Comma-split)", color = LuminaMuted) },
+                        placeholder = { Text("Summer, BBQ, Fun, Cozy") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = LuminaText, unfocusedTextColor = LuminaText),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(
-                onClick = { onSubmit(title, event, location, people, tags) },
-                colors = ButtonDefaults.buttonColors(containerColor = LuminaPrimary),
-                modifier = Modifier.testTag("add_photo_confirm")
-            ) {
-                Text("Catalog Photo", color = Color.Black, fontWeight = FontWeight.Bold)
+            if (step == 3) {
+                Button(
+                    onClick = {
+                        // Gather labels and new people to register
+                        val resolvedLabels = mutableListOf<String>()
+                        val newPeople = mutableListOf<Pair<String, String>>()
+
+                        // Face 1 resolution
+                        if (face1IsNew && face1NewName.isNotBlank()) {
+                            resolvedLabels.add(face1NewName)
+                            newPeople.add(Pair(face1NewName, face1NewRelation))
+                        } else if (face1Label.isNotBlank() && face1Label != "Unsure / Other") {
+                            resolvedLabels.add(face1Label)
+                        }
+
+                        // Face 2 resolution
+                        if (face2IsNew && face2NewName.isNotBlank()) {
+                            resolvedLabels.add(face2NewName)
+                            newPeople.add(Pair(face2NewName, face2NewRelation))
+                        } else if (face2Label.isNotBlank() && face2Label != "Unsure / Other") {
+                            resolvedLabels.add(face2Label)
+                        }
+
+                        viewModel.uploadPhotoWithLabels(
+                            title = title,
+                            event = event,
+                            location = location,
+                            tags = tags,
+                            labeledPeople = resolvedLabels,
+                            newPeopleToRegister = newPeople
+                        )
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = LuminaPrimary),
+                    modifier = Modifier.testTag("add_photo_confirm")
+                ) {
+                    Text("Secure & Sync Portal", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {

@@ -32,7 +32,9 @@ data class LuminaUiState(
     val lastScannedLabel: String = "Unknown Face",
     val isDemoCameraActive: Boolean = false,
     val namingClusterId: Int? = null,
-    val notificationMessage: String? = null
+    val notificationMessage: String? = null,
+    val selectedTagFilter: String? = null,
+    val selectedYearFilter: String? = null
 )
 
 class LuminaViewModel(application: Application) : AndroidViewModel(application) {
@@ -89,6 +91,26 @@ class LuminaViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setSearchQuery(query: String) {
         _state.update { it.copy(searchQuery = query) }
+    }
+
+    fun setTagFilter(tag: String?) {
+        _state.update { current ->
+            if (current.selectedTagFilter == tag) {
+                current.copy(selectedTagFilter = null)
+            } else {
+                current.copy(selectedTagFilter = tag)
+            }
+        }
+    }
+
+    fun setYearFilter(year: String?) {
+        _state.update { current ->
+            if (current.selectedYearFilter == year) {
+                current.copy(selectedYearFilter = null)
+            } else {
+                current.copy(selectedYearFilter = year)
+            }
+        }
     }
 
     fun setToleranceThreshold(value: Float) {
@@ -243,6 +265,57 @@ class LuminaViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repository.deleteCluster(clusterId)
             showToast("Cluster ignored. Face index updated.")
+        }
+    }
+
+    fun uploadPhotoWithLabels(
+        title: String,
+        event: String,
+        location: String,
+        tags: String,
+        labeledPeople: List<String>,
+        newPeopleToRegister: List<Pair<String, String>> // Name, Relation
+    ) {
+        viewModelScope.launch {
+            // 1. Register any new people in the database first
+            for (p in newPeopleToRegister) {
+                val exists = _state.value.people.any { it.name.equals(p.first, true) }
+                if (!exists) {
+                    val brushIdx = (0..5).random()
+                    val newPerson = Person(
+                        name = p.first,
+                        relation = p.second.ifBlank { "Family Member" },
+                        photoCount = 1,
+                        lastSeen = "Just now",
+                        confidence = 0.985f,
+                        yearsActive = "2026",
+                        eventsActive = 1,
+                        soloCount = 0,
+                        groupCount = 1,
+                        faceBrushIndex = brushIdx
+                    )
+                    repository.insertPerson(newPerson)
+                }
+            }
+
+            // 2. Insert the actual Photo
+            val brushIdx = (0..8).random()
+            val detectedPeopleStr = labeledPeople.filter { it.isNotBlank() }.joinToString(", ")
+            val resolvedTags = if (tags.isBlank()) "Uploaded" else tags
+
+            val photo = Photo(
+                title = title.ifBlank { "Newly Cataloged Memory" },
+                date = "2026-06-06",
+                event = event.ifBlank { "Personal Archive" },
+                location = location.ifBlank { "Secure Cloud Vault" },
+                confidence = 0.992f,
+                isFavorite = false,
+                brushIndex = brushIdx,
+                detectedPeople = detectedPeopleStr,
+                tags = resolvedTags
+            )
+            repository.insertPhoto(photo)
+            showToast("Successfully cataloged and secured face index for ${labeledPeople.size} members!")
         }
     }
 
